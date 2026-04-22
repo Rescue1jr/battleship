@@ -30,7 +30,7 @@ public abstract class Ship {
         horizontal = !horizontal;
     }
 
-    // 🔥 NEW METHODS
+    // NEW METHODS
     public void hit() {
         health--;
     }

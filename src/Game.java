@@ -51,19 +51,19 @@ public class Game extends Stage {
 
     private Random rand = new Random();
 
-    // 🤖 AI
+    // AI
     private boolean targetMode = false;
     private int lastHitRow = -1;
     private int lastHitCol = -1;
     private int direction = -1;
     private List<int[]> hitStack = new ArrayList<>();
 
-    // 🏁 GAME STATE
+    // GAME STATE
     private boolean gameOver = false;
     private int playerShipsRemaining;
     private int opponentShipsRemaining;
 
-    // ⚡ ABILITY
+    // ABILITY
     private Ability ability;
     private int sonarCooldown = 0;
     private boolean sonarMode = false;
@@ -103,7 +103,7 @@ public class Game extends Stage {
 
         showPlayerShips();
 
-        // 🔘 Sonar Button
+        // Sonar Button
         Button sonarButton = new Button("Use Sonar (10 PP)");
         cooldownLabel = new Label("Cooldown: 0");
 
@@ -275,7 +275,7 @@ public class Game extends Stage {
 
         Color current = (Color) opponentCells[r][c].getFill();
 
-        // 🔍 SONAR MODE
+        // SONAR MODE
         if (sonarMode) {
 
             if (current == Color.RED || current == Color.WHITE) {
@@ -393,7 +393,7 @@ public class Game extends Stage {
                     }
                 }
 
-                // 🔁 opponent shoots again after hit
+                // opponent shoots again after hit
                 opponentTurn();
 
             } else {
@@ -468,8 +468,7 @@ public class Game extends Stage {
     
     private boolean isValidShot(int r, int c) {
         return playerCells[r][c].getFill() == Color.LIGHTBLUE
-                || playerCells[r][c].getFill() == Color.DARKGRAY
-                || playerCells[r][c].getFill() == Color.BLACK;
+                || playerCells[r][c].getFill() == Color.DARKGRAY;
     }
     
 }

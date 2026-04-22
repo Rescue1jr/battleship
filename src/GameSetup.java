@@ -29,7 +29,7 @@ public class GameSetup extends Stage {
 
     private Rectangle selectedShip = null;
 
-    // 🔥 NEW: Ship system
+    // NEW: Ship system
     private List<Ship> ships = new ArrayList<>();
     private Map<Rectangle, Ship> shipMap = new HashMap<>();
 
@@ -65,7 +65,7 @@ public class GameSetup extends Stage {
         HBox boards = new HBox(60, left, right);
         boards.setAlignment(Pos.CENTER);
 
-        // 🔥 Create ships
+        // Create ships
         ships.add(new Carrier());
         ships.add(new Battleship());
         ships.add(new Destroyer());
@@ -180,7 +180,7 @@ public class GameSetup extends Stage {
         rect.setLayoutX(col * CELL_SIZE);
         rect.setLayoutY(row * CELL_SIZE);
 
-        // 🔥 Save into Ship object
+        // Save into Ship object
         ship.setPosition(row - 1, col - 1);
 
         if (!playerBoardPane.getChildren().contains(rect)) {
