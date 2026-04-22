@@ -60,3 +60,4 @@ public class Menu extends Application {
         primaryStage.show();
     }
 }
+

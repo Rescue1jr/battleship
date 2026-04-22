@@ -2,6 +2,7 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
@@ -11,10 +12,14 @@ import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import ships.*;
+
 import java.util.*;
 
 public class Game extends Stage {
-
+	
+	private GridPane opponentGridPane;
+	
     private final int SIZE = 10;
     private final int CELL = 35;
 
@@ -23,6 +28,12 @@ public class Game extends Stage {
 
     private Rectangle[][] playerCells = new Rectangle[SIZE][SIZE];
     private Rectangle[][] opponentCells = new Rectangle[SIZE][SIZE];
+
+    private Ship[][] playerShipGrid = new Ship[SIZE][SIZE];
+    private Ship[][] opponentShipGrid = new Ship[SIZE][SIZE];
+
+    private List<Ship> playerShips;
+    private List<Ship> opponentShips = new ArrayList<>();
 
     private boolean playerTurn = true;
     private int shotsFired = 0;
@@ -33,19 +44,39 @@ public class Game extends Stage {
     private Label shotsLabel;
 
     private int seconds = 0;
+    private Timeline timer;
+
     private Random rand = new Random();
 
-    // Ship tracking
-    private Map<Integer, List<int[]>> opponentShips = new HashMap<>();
-    private Map<Integer, Integer> opponentHealth = new HashMap<>();
-    private int shipIdCounter = 2;
+    // 🤖 AI
+    private boolean targetMode = false;
+    private int lastHitRow = -1;
+    private int lastHitCol = -1;
+    private int direction = -1;
+    private List<int[]> hitStack = new ArrayList<>();
 
-    public Game(String username, int[][] playerGrid, int[][] opponentGrid) {
+    // 🏁 GAME STATE
+    private boolean gameOver = false;
+    private int playerShipsRemaining;
+    private int opponentShipsRemaining;
 
-        this.playerBoard = playerGrid;
-        this.opponentBoard = opponentGrid;
+    // ⚡ ABILITY
+    private Ability ability;
+    private int sonarCooldown = 0;
+    private boolean sonarMode = false;
+    private Label cooldownLabel;
 
-        identifyShips();
+    public Game(String username, List<Ship> ships, int[][] opponentGrid) {
+
+        this.playerShips = ships;
+
+        buildPlayerGridWithShips(ships);
+        generateOpponentShips();
+
+        playerShipsRemaining = playerShips.size();
+        opponentShipsRemaining = opponentShips.size();
+
+        ability = new Ability();
 
         VBox root = new VBox(20);
         root.setAlignment(Pos.CENTER);
@@ -59,75 +90,149 @@ public class Game extends Stage {
         timerLabel = new Label("Time: 0s");
         shotsLabel = new Label("Shots: 0");
 
-        VBox leftInfo = new VBox(10, timerLabel, shotsLabel);
-        leftInfo.setAlignment(Pos.CENTER);
+        VBox info = new VBox(10, timerLabel, shotsLabel);
+        info.setAlignment(Pos.CENTER);
 
         GridPane playerGridPane = createBoard(playerCells, true);
-        GridPane opponentGridPane = createBoard(opponentCells, false);
+        opponentGridPane = createBoard(opponentCells, false);
 
-        VBox leftBoard = new VBox(10, playerLabel, playerGridPane);
-        VBox rightBoard = new VBox(10, opponentLabel, opponentGridPane);
+        showPlayerShips();
 
-        leftBoard.setAlignment(Pos.CENTER);
-        rightBoard.setAlignment(Pos.CENTER);
+        // 🔘 Sonar Button
+        Button sonarButton = new Button("Use Sonar (10 PP)");
+        cooldownLabel = new Label("Cooldown: 0");
 
-        HBox boards = new HBox(50, leftInfo, leftBoard, rightBoard);
+        sonarButton.setOnAction(e -> {
+
+            if (!playerTurn || gameOver) return;
+            if (!ability.canUseSonar()) return;
+            if (sonarCooldown > 0) return;
+
+            sonarMode = true;
+            sonarButton.setText("Select a tile...");
+        });
+
+        VBox left = new VBox(10,
+                playerLabel,
+                playerGridPane,
+                ability.getDisplay(),
+                sonarButton,
+                cooldownLabel
+        );
+
+        VBox right = new VBox(10, opponentLabel, opponentGridPane);
+
+        left.setAlignment(Pos.CENTER);
+        right.setAlignment(Pos.CENTER);
+
+        HBox boards = new HBox(50, info, left, right);
         boards.setAlignment(Pos.CENTER);
 
         root.getChildren().add(boards);
 
-        Scene scene = new Scene(root, 1000, 600);
+        Scene scene = new Scene(root, 1100, 650);
         setScene(scene);
-        setTitle("Battleship Game");
+        setTitle("Battleship");
 
         startTimer();
         updateTurnUI();
     }
 
-    private void identifyShips() {
+    private void buildPlayerGridWithShips(List<Ship> ships) {
 
-        boolean[][] visited = new boolean[SIZE][SIZE];
+        playerBoard = new int[SIZE][SIZE];
 
-        for (int r = 0; r < SIZE; r++) {
-            for (int c = 0; c < SIZE; c++) {
+        for (Ship ship : ships) {
 
-                if (opponentBoard[r][c] == 1 && !visited[r][c]) {
+            int row = ship.getRow();
+            int col = ship.getCol();
 
-                    List<int[]> shipCells = new ArrayList<>();
-                    dfs(r, c, visited, shipCells);
+            for (int i = 0; i < ship.getLength(); i++) {
 
-                    opponentShips.put(shipIdCounter, shipCells);
-                    opponentHealth.put(shipIdCounter, shipCells.size());
+                int r = row + (ship.isHorizontal() ? 0 : i);
+                int c = col + (ship.isHorizontal() ? i : 0);
 
-                    for (int[] pos : shipCells) {
-                        opponentBoard[pos[0]][pos[1]] = shipIdCounter;
+                playerBoard[r][c] = 1;
+                playerShipGrid[r][c] = ship;
+            }
+        }
+    }
+
+    private void generateOpponentShips() {
+
+        opponentBoard = new int[SIZE][SIZE];
+
+        opponentShips.add(new Carrier());
+        opponentShips.add(new Battleship());
+        opponentShips.add(new Destroyer());
+        opponentShips.add(new Submarine());
+        opponentShips.add(new ScoutShip());
+
+        for (Ship ship : opponentShips) {
+
+            boolean placed = false;
+
+            while (!placed) {
+
+                int row = rand.nextInt(SIZE);
+                int col = rand.nextInt(SIZE);
+                boolean horizontal = rand.nextBoolean();
+
+                ship.setPosition(row, col);
+                if (!horizontal) ship.rotate();
+
+                if (canPlaceShip(opponentShipGrid, ship)) {
+
+                    for (int i = 0; i < ship.getLength(); i++) {
+
+                        int r = row + (ship.isHorizontal() ? 0 : i);
+                        int c = col + (ship.isHorizontal() ? i : 0);
+
+                        opponentBoard[r][c] = 1;
+                        opponentShipGrid[r][c] = ship;
                     }
 
-                    shipIdCounter++;
+                    placed = true;
                 }
             }
         }
     }
 
-    private void dfs(int r, int c, boolean[][] visited, List<int[]> shipCells) {
+    private boolean canPlaceShip(Ship[][] grid, Ship ship) {
 
-        if (r < 0 || c < 0 || r >= SIZE || c >= SIZE) return;
-        if (visited[r][c] || opponentBoard[r][c] != 1) return;
+        int row = ship.getRow();
+        int col = ship.getCol();
 
-        visited[r][c] = true;
-        shipCells.add(new int[]{r, c});
+        for (int i = 0; i < ship.getLength(); i++) {
 
-        dfs(r + 1, c, visited, shipCells);
-        dfs(r - 1, c, visited, shipCells);
-        dfs(r, c + 1, visited, shipCells);
-        dfs(r, c - 1, visited, shipCells);
+            int r = row + (ship.isHorizontal() ? 0 : i);
+            int c = col + (ship.isHorizontal() ? i : 0);
+
+            if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return false;
+            if (grid[r][c] != null) return false;
+        }
+
+        return true;
     }
 
     private GridPane createBoard(Rectangle[][] cells, boolean isPlayer) {
 
         GridPane grid = new GridPane();
 
+        for (int c = 0; c < SIZE; c++) {
+            Label label = new Label(String.valueOf(c + 1));
+            label.setMinSize(CELL, CELL);
+            label.setAlignment(Pos.CENTER);
+            grid.add(label, c + 1, 0);
+        }
+
         for (int r = 0; r < SIZE; r++) {
+
+            Label rowLabel = new Label(String.valueOf((char) ('A' + r)));
+            rowLabel.setMinSize(CELL, CELL);
+            rowLabel.setAlignment(Pos.CENTER);
+            grid.add(rowLabel, 0, r + 1);
+
             for (int c = 0; c < SIZE; c++) {
 
                 Rectangle rect = new Rectangle(CELL, CELL);
@@ -142,34 +247,79 @@ public class Game extends Stage {
                 }
 
                 cells[r][c] = rect;
-                grid.add(rect, c, r);
+                grid.add(rect, c + 1, r + 1);
             }
         }
 
         return grid;
     }
 
+    private void showPlayerShips() {
+        for (int r = 0; r < SIZE; r++) {
+            for (int c = 0; c < SIZE; c++) {
+                if (playerShipGrid[r][c] != null) {
+                    playerCells[r][c].setFill(Color.DARKGRAY);
+                }
+            }
+        }
+    }
+
     private void handlePlayerShot(int r, int c) {
 
-        if (!playerTurn) return;
-        if (opponentCells[r][c].getFill() != Color.LIGHTBLUE) return;
+        if (!playerTurn || gameOver) return;
+
+        Color current = (Color) opponentCells[r][c].getFill();
+
+        // 🔍 SONAR MODE
+        if (sonarMode) {
+
+            if (current == Color.RED || current == Color.WHITE) {
+
+                ability.useSonar();
+                sonarCooldown = 3;
+
+                int count = countAdjacentShipsWithDiagonals(r, c);
+
+                Label sonarLabel = new Label(String.valueOf(count));
+                sonarLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+
+             // Remove old rectangle from grid
+                opponentGridPane.getChildren().remove(opponentCells[r][c]);
+
+                // Create stack with label
+                StackPane stack = new StackPane(opponentCells[r][c], sonarLabel);
+
+                // Add back into correct position
+                opponentGridPane.add(stack, c + 1, r + 1);
+                sonarMode = false;
+            }
+
+            return;
+        }
+
+        if (current != Color.LIGHTBLUE) return;
 
         shotsFired++;
         shotsLabel.setText("Shots: " + shotsFired);
 
-        int cell = opponentBoard[r][c];
+        if (opponentShipGrid[r][c] != null) {
 
-        if (cell >= 2) {
+            Ship ship = opponentShipGrid[r][c];
+            ship.hit();
 
             opponentCells[r][c].setFill(Color.RED);
 
-            opponentHealth.put(cell, opponentHealth.get(cell) - 1);
+            if (ship.isSunk()) {
+                sinkShip(opponentShipGrid, opponentCells, ship);
+                opponentShipsRemaining--;
 
-            if (opponentHealth.get(cell) == 0) {
-                sinkShip(cell);
+                if (opponentShipsRemaining == 0) {
+                    endGame(true);
+                }
             }
 
         } else {
+
             opponentCells[r][c].setFill(Color.WHITE);
             playerTurn = false;
             updateTurnUI();
@@ -177,28 +327,72 @@ public class Game extends Stage {
         }
     }
 
-    private void sinkShip(int shipId) {
+    private int countAdjacentShipsWithDiagonals(int r, int c) {
 
-        for (int[] pos : opponentShips.get(shipId)) {
-            opponentCells[pos[0]][pos[1]].setFill(Color.BLACK);
+        int count = 0;
+
+        int[][] dirs = {
+                {-1,0},{1,0},{0,-1},{0,1},
+                {-1,-1},{-1,1},{1,-1},{1,1}
+        };
+
+        for (int[] d : dirs) {
+
+            int nr = r + d[0];
+            int nc = c + d[1];
+
+            if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+
+                if (opponentShipGrid[nr][nc] != null) {
+
+                    Color tileColor = (Color) opponentCells[nr][nc].getFill();
+
+                    if (tileColor != Color.RED && tileColor != Color.BLACK) {
+                        count++;
+                    }
+                }
+            }
         }
-    }
 
+        return count;
+    }
     private void opponentTurn() {
 
         Timeline delay = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
 
-            int r = rand.nextInt(SIZE);
-            int c = rand.nextInt(SIZE);
+            if (gameOver) return;
 
-            if (playerCells[r][c].getFill() != Color.LIGHTBLUE) {
-                opponentTurn();
-                return;
-            }
+            int r, c;
 
-            if (playerBoard[r][c] == 1) {
+            do {
+                r = rand.nextInt(SIZE);
+                c = rand.nextInt(SIZE);
+            } while (!isValidShot(r, c));
+
+            if (playerShipGrid[r][c] != null) {
+
+                Ship ship = playerShipGrid[r][c];
+                ship.hit();
+
                 playerCells[r][c].setFill(Color.RED);
+
+                ability.addPoints(1);
+
+                if (ship.isSunk()) {
+                    sinkShip(playerShipGrid, playerCells, ship);
+                    playerShipsRemaining--;
+
+                    if (playerShipsRemaining == 0) {
+                        endGame(false);
+                        return;
+                    }
+                }
+
+                // 🔁 opponent shoots again after hit
+                opponentTurn();
+
             } else {
+
                 playerCells[r][c].setFill(Color.WHITE);
                 playerTurn = true;
                 updateTurnUI();
@@ -206,8 +400,20 @@ public class Game extends Stage {
 
         }));
 
-        delay.setCycleCount(1);
         delay.play();
+    }
+
+    private void endGame(boolean playerWon) {
+
+        gameOver = true;
+
+        if (timer != null) timer.stop();
+
+        Label result = new Label(playerWon ? "YOU WIN!" : "YOU LOSE!");
+        result.setFont(Font.font("Arial", FontWeight.BOLD, 40));
+        result.setTextFill(playerWon ? Color.GREEN : Color.RED);
+
+        ((VBox) getScene().getRoot()).getChildren().add(result);
     }
 
     private void updateTurnUI() {
@@ -215,6 +421,12 @@ public class Game extends Stage {
         if (playerTurn) {
             playerLabel.setTextFill(Color.YELLOW);
             opponentLabel.setTextFill(Color.BLACK);
+
+            ability.addPoints(2);
+
+            if (sonarCooldown > 0) sonarCooldown--;
+            cooldownLabel.setText("Cooldown: " + sonarCooldown);
+
         } else {
             opponentLabel.setTextFill(Color.YELLOW);
             playerLabel.setTextFill(Color.BLACK);
@@ -223,12 +435,33 @@ public class Game extends Stage {
 
     private void startTimer() {
 
-        Timeline timer = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
-            seconds++;
-            timerLabel.setText("Time: " + seconds + "s");
+        timer = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
+            if (!gameOver) {
+                seconds++;
+                timerLabel.setText("Time: " + seconds + "s");
+            }
         }));
 
         timer.setCycleCount(Timeline.INDEFINITE);
         timer.play();
     }
+    
+    private void sinkShip(Ship[][] grid, Rectangle[][] cells, Ship ship) {
+
+        for (int r = 0; r < SIZE; r++) {
+            for (int c = 0; c < SIZE; c++) {
+
+                if (grid[r][c] == ship) {
+                    cells[r][c].setFill(Color.BLACK);
+                }
+            }
+        }
+    }
+    
+    private boolean isValidShot(int r, int c) {
+        return playerCells[r][c].getFill() == Color.LIGHTBLUE
+                || playerCells[r][c].getFill() == Color.DARKGRAY
+                || playerCells[r][c].getFill() == Color.BLACK;
+    }
+    
 }
