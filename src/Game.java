@@ -20,6 +20,9 @@ public class Game extends Stage {
 	
 	private GridPane opponentGridPane;
 	
+	private Scoreboard scoreboard = new Scoreboard();
+	private String username;
+	
     private final int SIZE = 10;
     private final int CELL = 35;
 
@@ -68,6 +71,8 @@ public class Game extends Stage {
 
     public Game(String username, List<Ship> ships, int[][] opponentGrid) {
 
+        this.username = username;
+        
         this.playerShips = ships;
 
         buildPlayerGridWithShips(ships);
@@ -408,6 +413,9 @@ public class Game extends Stage {
         gameOver = true;
 
         if (timer != null) timer.stop();
+
+        // SAVE TO DATABASE
+        scoreboard.saveGameResult(username, seconds, shotsFired, playerWon);
 
         Label result = new Label(playerWon ? "YOU WIN!" : "YOU LOSE!");
         result.setFont(Font.font("Arial", FontWeight.BOLD, 40));
