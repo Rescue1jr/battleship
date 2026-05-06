@@ -39,6 +39,11 @@ public class Menu extends Application {
             GameSetup setup = new GameSetup();
             setup.show();
         });
+        
+        leaderboardButton.setOnAction(e -> {
+            Leaderboard board = new Leaderboard();
+            board.show();
+        });
 
         BorderPane topPane = new BorderPane();
         topPane.setCenter(title);

@@ -6,13 +6,15 @@ public class Scoreboard {
 
     public Scoreboard() {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver"); //force load driver
+            Class.forName("com.mysql.cj.jdbc.Driver");
 
             connection = DriverManager.getConnection(
                     "jdbc:mysql://localhost:3306/battleship",
                     "root",
                     "ThisisMine3"
             );
+
+            initializeDatabase();
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -71,5 +73,55 @@ public class Scoreboard {
         }
 
         throw new SQLException("Failed to create player.");
+    }
+    
+    private void initializeDatabase() {
+
+        try {
+
+            Statement stmt = connection.createStatement();
+
+            // Player table
+            String playerTable = "CREATE TABLE IF NOT EXISTS player (" +
+                    "player_id INT AUTO_INCREMENT PRIMARY KEY, " +
+                    "name VARCHAR(45) UNIQUE" +
+                    ")";
+
+            // Game results table
+            String resultsTable = "CREATE TABLE IF NOT EXISTS game_results (" +
+                    "game_ID INT AUTO_INCREMENT PRIMARY KEY, " +
+                    "player_id INT, " +
+                    "time VARCHAR(45), " +
+                    "shots INT, " +
+                    "victory VARCHAR(5), " +
+                    "FOREIGN KEY (player_id) REFERENCES player(player_id)" +
+                    ")";
+
+            stmt.execute(playerTable);
+            stmt.execute(resultsTable);
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    public ResultSet getLeaderboard() {
+
+        try {
+
+            String query =
+                    "SELECT g.game_ID, p.player_id, p.name, g.time, g.shots, g.victory " +
+                    "FROM game_results g " +
+                    "JOIN player p ON g.player_id = p.player_id " +
+                    "ORDER BY g.game_ID DESC";
+
+            Statement stmt = connection.createStatement();
+            return stmt.executeQuery(query);
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return null;
     }
 }

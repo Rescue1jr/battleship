@@ -8,56 +8,72 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 
 import ships.*;
 
+import java.io.File;
 import java.util.*;
 
 public class GameSetup extends Stage {
 
     private String username;
 
-    private final int CELL_SIZE = 35;
-    private final int GRID_SIZE = 10;
+    private final int CELL = 35;
+    private final int SIZE = 10;
 
-    private boolean placementLocked = false;
+    private Pane playerBoard = new Pane();
+    private Pane opponentBoard = new Pane();
 
-    private Pane playerBoardPane = new Pane();
-    private Pane opponentBoardPane = new Pane();
+    private Ship[][] playerGrid = new Ship[SIZE][SIZE];
+    private int[][] opponentGrid = new int[SIZE][SIZE];
 
-    private int[][] opponentGrid = new int[10][10];
+    private List<Ship> playerShips = new ArrayList<>();
+    private Map<ImageView, Ship> shipMap = new HashMap<>();
 
-    private Rectangle selectedShip = null;
+    private int playerTheme;
+    private int opponentTheme;
 
-    // NEW: Ship system
-    private List<Ship> ships = new ArrayList<>();
-    private Map<Rectangle, Ship> shipMap = new HashMap<>();
+    private ImageView selectedShip;
 
     public GameSetup() {
 
         TextInputDialog dialog = new TextInputDialog();
-        dialog.setHeaderText("Enter your username");
+        dialog.setHeaderText("Enter username");
         username = dialog.showAndWait().orElse("Player");
 
-        VBox root = new VBox(25);
+        Random rand = new Random();
+        playerTheme = rand.nextInt(3) + 1;
+        do {
+            opponentTheme = rand.nextInt(3) + 1;
+        } while (opponentTheme == playerTheme);
+
+        VBox root = new VBox(20);
         root.setAlignment(Pos.CENTER);
 
         Label playerLabel = new Label(username);
-        playerLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        playerLabel.setFont(Font.font("Arial", FontWeight.BOLD, 22));
 
         Label opponentLabel = new Label("Opponent");
-        opponentLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        opponentLabel.setFont(Font.font("Arial", FontWeight.BOLD, 22));
 
-        playerBoardPane.setPrefSize(11 * CELL_SIZE, 11 * CELL_SIZE);
-        opponentBoardPane.setPrefSize(11 * CELL_SIZE, 11 * CELL_SIZE);
+        playerBoard.setPrefSize(11 * CELL, 11 * CELL);
+        opponentBoard.setPrefSize(11 * CELL, 11 * CELL);
 
-        drawBoard(playerBoardPane);
-        drawBoard(opponentBoardPane);
+        drawBoard(playerBoard);
+        drawBoard(opponentBoard);
 
         placeOpponentShips();
 
-        VBox left = new VBox(10, playerLabel, playerBoardPane);
-        VBox right = new VBox(10, opponentLabel, opponentBoardPane);
+        createShip("carrier", new Carrier(), 0);
+        createShip("battleship", new Battleship(), 1);
+        createShip("crusier", new Destroyer(), 2);
+        createShip("submarine", new Submarine(), 3);
+        createShip("scout ship", new ScoutShip(), 4);
+
+        VBox left = new VBox(10, playerLabel, playerBoard);
+        VBox right = new VBox(10, opponentLabel, opponentBoard);
 
         left.setAlignment(Pos.CENTER);
         right.setAlignment(Pos.CENTER);
@@ -65,160 +81,157 @@ public class GameSetup extends Stage {
         HBox boards = new HBox(60, left, right);
         boards.setAlignment(Pos.CENTER);
 
-        // Create ships
-        ships.add(new Carrier());
-        ships.add(new Battleship());
-        ships.add(new Destroyer());
-        ships.add(new Submarine());
-        ships.add(new ScoutShip());
+        Button startBtn = new Button("Start Game");
+        startBtn.setStyle("-fx-background-color: green; -fx-text-fill: white;");
 
-        HBox shipsBox = new HBox(15);
-        shipsBox.setAlignment(Pos.CENTER);
-
-        for (Ship ship : ships) {
-            Rectangle rect = createShip(ship);
-            shipMap.put(rect, ship);
-            shipsBox.getChildren().add(rect);
-        }
-
-        Button startButton = new Button("Start Game");
-        startButton.setStyle("-fx-background-color: green; -fx-text-fill: white;");
-        startButton.setPrefWidth(200);
-
-        startButton.setOnAction(e -> {
-            placementLocked = true;
-
-            Game game = new Game(username, ships, opponentGrid);
+        startBtn.setOnAction(e -> {
+            Game game = new Game(username, playerShips, opponentGrid, playerTheme, opponentTheme);
             game.show();
-
             this.close();
         });
 
-        root.getChildren().addAll(boards, shipsBox, startButton);
+        root.getChildren().addAll(boards, startBtn);
 
         Scene scene = new Scene(root, 1000, 750);
 
         scene.setOnKeyPressed(e -> {
-            if (placementLocked) return;
-
             if (e.getCode() == KeyCode.R && selectedShip != null) {
                 Ship ship = shipMap.get(selectedShip);
-                ship.rotate();
-
-                double temp = selectedShip.getWidth();
-                selectedShip.setWidth(selectedShip.getHeight());
-                selectedShip.setHeight(temp);
-
-                snapToGrid(selectedShip);
+                rotateShip(selectedShip, ship);
             }
         });
 
         setScene(scene);
-        setTitle("Battleship Setup");
+        setTitle("Setup");
     }
 
-    private Rectangle createShip(Ship ship) {
+    private Image loadImage(int theme, String name) {
+        return new Image(new File("lib/" + theme + "/" + name + ".png").toURI().toString());
+    }
 
-        Rectangle rect = new Rectangle(ship.getLength() * CELL_SIZE, CELL_SIZE);
-        rect.setFill(Color.DARKGRAY);
+    private void createShip(String name, Ship ship, int index) {
+
+        ImageView view = new ImageView(loadImage(playerTheme, name));
+
+        view.setFitWidth(ship.getLength() * CELL);
+        view.setFitHeight(CELL);
+
+        // Start below board
+        view.setLayoutX((index + 1) * CELL * 2);
+        view.setLayoutY((SIZE + 2) * CELL);
+
+        playerShips.add(ship);
+        shipMap.put(view, ship);
 
         final double[] offset = new double[2];
-        final double[] lastValid = new double[2];
 
-        rect.setOnMousePressed(e -> {
-            if (placementLocked) return;
-
-            selectedShip = rect;
-
-            offset[0] = e.getSceneX() - rect.getLayoutX();
-            offset[1] = e.getSceneY() - rect.getLayoutY();
-
-            lastValid[0] = rect.getLayoutX();
-            lastValid[1] = rect.getLayoutY();
+        view.setOnMousePressed(e -> {
+            selectedShip = view;
+            offset[0] = e.getX();
+            offset[1] = e.getY();
         });
 
-        rect.setOnMouseDragged(e -> {
-            if (placementLocked) return;
+        view.setOnMouseDragged(e -> {
 
-            rect.setLayoutX(e.getSceneX() - offset[0]);
-            rect.setLayoutY(e.getSceneY() - offset[1]);
+            double boardX = e.getSceneX() - playerBoard.localToScene(0, 0).getX();
+            double boardY = e.getSceneY() - playerBoard.localToScene(0, 0).getY();
+
+            view.setLayoutX(boardX - offset[0]);
+            view.setLayoutY(boardY - offset[1]);
         });
 
-        rect.setOnMouseReleased(e -> {
-            if (placementLocked) return;
+        view.setOnMouseReleased(e -> snapShip(view, ship));
 
-            if (!snapToGrid(rect)) {
-                rect.setLayoutX(lastValid[0]);
-                rect.setLayoutY(lastValid[1]);
-            }
-
-            selectedShip = null;
-        });
-
-        return rect;
+        playerBoard.getChildren().add(view);
     }
 
-    private boolean snapToGrid(Rectangle rect) {
+    private void rotateShip(ImageView view, Ship ship) {
+        if (ship == null) return;
 
-        Ship ship = shipMap.get(rect);
+        view.setRotate((view.getRotate() + 90) % 180);
+        ship.rotate();
+    }
 
-        double x = rect.getLayoutX();
-        double y = rect.getLayoutY();
+    private void snapShip(ImageView view, Ship ship) {
 
-        int col = (int) Math.round((x - playerBoardPane.getLayoutX()) / CELL_SIZE);
-        int row = (int) Math.round((y - playerBoardPane.getLayoutY()) / CELL_SIZE);
+    // 👉 Use CENTER of ship instead of top-left
+    double centerX = view.getLayoutX() + view.getBoundsInParent().getWidth() / 2;
+    double centerY = view.getLayoutY() + view.getBoundsInParent().getHeight() / 2;
 
-        int length = ship.getLength();
-        boolean horizontal = ship.isHorizontal();
+    int col = (int)(centerX / CELL) - 1;
+    int row = (int)(centerY / CELL) - 1;
 
-        if (horizontal && col + length - 1 > 10) col = 10 - length + 1;
-        if (!horizontal && row + length - 1 > 10) row = 10 - length + 1;
+    int length = ship.getLength();
+    boolean horizontal = ship.isHorizontal();
 
-        if (col < 1) col = 1;
-        if (row < 1) row = 1;
+    // bounds
+    if (col < 0 || row < 0) return;
 
-        rect.setLayoutX(col * CELL_SIZE);
-        rect.setLayoutY(row * CELL_SIZE);
+    if (horizontal) {
+        if (col + length > SIZE) return;
+    } else {
+        if (row + length > SIZE) return;
+    }
 
-        // Save into Ship object
-        ship.setPosition(row - 1, col - 1);
+    // overlap
+    for (int i = 0; i < length; i++) {
+        int r = row + (horizontal ? 0 : i);
+        int c = col + (horizontal ? i : 0);
 
-        if (!playerBoardPane.getChildren().contains(rect)) {
-            playerBoardPane.getChildren().add(rect);
+        if (playerGrid[r][c] != null && playerGrid[r][c] != ship) return;
+    }
+
+    // clear old
+    for (int r = 0; r < SIZE; r++) {
+        for (int c = 0; c < SIZE; c++) {
+            if (playerGrid[r][c] == ship) playerGrid[r][c] = null;
         }
-
-        return true;
     }
 
+    // place
+    ship.setPosition(row, col);
+
+    for (int i = 0; i < length; i++) {
+        int r = row + (horizontal ? 0 : i);
+        int c = col + (horizontal ? i : 0);
+        playerGrid[r][c] = ship;
+    }
+
+    // 🔥 Snap using correct anchor
+    view.setLayoutX((col + 1) * CELL);
+    view.setLayoutY((row + 1) * CELL);
+}
     private void drawBoard(Pane pane) {
 
         pane.setStyle("-fx-background-color: lightblue; -fx-border-color: black;");
 
-        for (int i = 0; i <= GRID_SIZE; i++) {
-            for (int j = 0; j <= GRID_SIZE; j++) {
+        for (int r = 0; r <= SIZE; r++) {
+            for (int c = 0; c <= SIZE; c++) {
 
-                if (i == 0 && j > 0) {
-                    Label label = new Label(String.valueOf(j));
-                    label.setPrefSize(CELL_SIZE, CELL_SIZE);
-                    label.setAlignment(Pos.CENTER);
-                    label.setLayoutX(j * CELL_SIZE);
-                    pane.getChildren().add(label);
+                if (r == 0 && c > 0) {
+                    Label l = new Label(String.valueOf(c));
+                    l.setPrefSize(CELL, CELL);
+                    l.setLayoutX(c * CELL);
+                    l.setLayoutY(0);
+                    l.setAlignment(Pos.CENTER);
+                    pane.getChildren().add(l);
                 }
 
-                if (j == 0 && i > 0) {
-                    Label label = new Label(String.valueOf((char) ('A' + i - 1)));
-                    label.setPrefSize(CELL_SIZE, CELL_SIZE);
-                    label.setAlignment(Pos.CENTER);
-                    label.setLayoutY(i * CELL_SIZE);
-                    pane.getChildren().add(label);
+                if (c == 0 && r > 0) {
+                    Label l = new Label(String.valueOf((char) ('A' + r - 1)));
+                    l.setPrefSize(CELL, CELL);
+                    l.setLayoutX(0);
+                    l.setLayoutY(r * CELL);
+                    l.setAlignment(Pos.CENTER);
+                    pane.getChildren().add(l);
                 }
 
-                if (i > 0 && j > 0) {
-                    Rectangle cell = new Rectangle(CELL_SIZE, CELL_SIZE);
+                if (r > 0 && c > 0) {
+                    Rectangle cell = new Rectangle(CELL, CELL);
                     cell.setStroke(Color.BLACK);
                     cell.setFill(Color.TRANSPARENT);
-                    cell.setLayoutX(j * CELL_SIZE);
-                    cell.setLayoutY(i * CELL_SIZE);
+                    cell.setLayoutX(c * CELL);
+                    cell.setLayoutY(r * CELL);
                     pane.getChildren().add(cell);
                 }
             }
@@ -228,7 +241,7 @@ public class GameSetup extends Stage {
     private void placeOpponentShips() {
 
         Random rand = new Random();
-        int[] sizes = {5,4,3,3,2};
+        int[] sizes = {5, 4, 3, 3, 2};
 
         for (int size : sizes) {
 
@@ -237,52 +250,34 @@ public class GameSetup extends Stage {
             while (!placed) {
 
                 boolean horizontal = rand.nextBoolean();
-                int row = rand.nextInt(10);
-                int col = rand.nextInt(10);
+                int row = rand.nextInt(SIZE);
+                int col = rand.nextInt(SIZE);
 
-                if (horizontal) {
+                if (horizontal && col + size > SIZE) continue;
+                if (!horizontal && row + size > SIZE) continue;
 
-                    if (col + size > 10) continue;
+                boolean valid = true;
 
-                    boolean valid = true;
-                    for (int i = 0; i < size; i++) {
-                        if (opponentGrid[row][col + i] == 1) {
-                            valid = false;
-                            break;
-                        }
+                for (int i = 0; i < size; i++) {
+                    int r = row + (horizontal ? 0 : i);
+                    int c = col + (horizontal ? i : 0);
+
+                    if (opponentGrid[r][c] == 1) {
+                        valid = false;
+                        break;
                     }
+                }
 
-                    if (!valid) continue;
+                if (!valid) continue;
 
-                    for (int i = 0; i < size; i++) {
-                        opponentGrid[row][col + i] = 1;
-                    }
-
-                } else {
-
-                    if (row + size > 10) continue;
-
-                    boolean valid = true;
-                    for (int i = 0; i < size; i++) {
-                        if (opponentGrid[row + i][col] == 1) {
-                            valid = false;
-                            break;
-                        }
-                    }
-
-                    if (!valid) continue;
-
-                    for (int i = 0; i < size; i++) {
-                        opponentGrid[row + i][col] = 1;
-                    }
+                for (int i = 0; i < size; i++) {
+                    int r = row + (horizontal ? 0 : i);
+                    int c = col + (horizontal ? i : 0);
+                    opponentGrid[r][c] = 1;
                 }
 
                 placed = true;
             }
         }
-    }
-
-    public String getUsername() {
-        return username;
     }
 }
